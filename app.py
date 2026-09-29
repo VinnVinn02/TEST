@@ -48,7 +48,9 @@ if res:
     data = export.build_zip(records, res["warnings"], res["general"], res["meta"], res["bast_no"],
                             st.session_state.stem, st.session_state.images)
     st.download_button("Unduh ZIP (3 Excel + gambar ter-rename)", data,
-                       f"BAST_{export.bast_tag(res['bast_no'])}.zip", "application/zip")
+                       f"BAST_{export.bast_tag(res['bast_no'])}.zip", "application/zip")    st.download_button("Unduh halaman PDF sebagai gambar (nama CamScanner_N)",
+                       export.pages_zip(st.session_state.images, st.session_state.stem),
+                       "halaman_pdf.zip", "application/zip")
 
 st.divider()
 st.subheader("Rename gambar sesuai DATA RENAME")

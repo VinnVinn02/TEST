@@ -114,3 +114,13 @@ def build_zip(records, warnings, general, meta, bast_no, pdf_stem, page_images: 
             if pg in page_images:
                 z.writestr(f"BERKAS_RENAME/{new}", page_images[pg])
     return buf.getvalue()
+
+
+def pages_zip(page_images: dict, pdf_stem: str) -> bytes:
+    """Semua halaman PDF sebagai JPG bernama '<nama pdf>_<halaman>.jpg' (nama lama di DATA RENAME)."""
+    prefix = pdf_stem.replace("_", " ")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for pg, data in sorted(page_images.items()):
+            z.writestr(f"{prefix}_{pg}.jpg", data)
+    return buf.getvalue()

@@ -105,3 +105,8 @@ def test_renamer_tolerant_names():
     z, rep = renamer.rename_files(m, files)
     assert sorted(zipfile.ZipFile(io.BytesIO(z)).namelist()) == ["A_FAKTUR.jpg", "A_KTP.jpg", "A_SERTIFIKAT.jpg"]
     assert rep[-1].startswith("3 dari 3")
+
+
+def test_pages_zip_names():
+    z = zipfile.ZipFile(io.BytesIO(export.pages_zip({1: b"a", 4: b"b"}, "CamScanner_28-09-26_21.33")))
+    assert z.namelist() == ["CamScanner 28-09-26 21.33_1.jpg", "CamScanner 28-09-26 21.33_4.jpg"]
