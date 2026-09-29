@@ -43,8 +43,10 @@ def test_assemble_and_export():
     assert rec["NO MESIN"] == "JME1E2413887" and rec["ALAMAT 2"] == "P. SETOKOK - BULANG"
     assert rec["NO. SRUT"].startswith("SRUT/") and rec["ALASAN BELI"] == "UNTUK KERJA" and rec["NO HP"] == "081371604033"
     assert any("diperbaiki sesuai BAST" in w for w in r["warnings"][0])
-    z = zipfile.ZipFile(io.BytesIO(export.build_zip(r["records"], r["warnings"], r["general"], r["meta"], r["bast_no"],
-                                                    "CamScanner_28-09-26_21.33", {4: b"a", 5: b"b", 44: b"c"})))
+    data, checks = export.build_zip(r["records"], r["warnings"], r["general"], r["meta"], r["bast_no"],
+                                    "CamScanner_28-09-26_21.33", {4: b"a", 5: b"b", 44: b"c"}, r["doc_types"])
+    assert checks == []
+    z = zipfile.ZipFile(io.BytesIO(data))
     names = z.namelist()
     assert "DATA_BERKAS_KENDARAAN_BAST_047-00024.xlsx" in names and "BERKAS_RENAME/ZULKIFLI_KTP.jpg" in names
 
@@ -110,3 +112,16 @@ def test_renamer_tolerant_names():
 def test_pages_zip_names():
     z = zipfile.ZipFile(io.BytesIO(export.pages_zip({1: b"a", 4: b"b"}, "CamScanner_28-09-26_21.33")))
     assert z.namelist() == ["CamScanner 28-09-26 21.33_1.jpg", "CamScanner 28-09-26 21.33_4.jpg"]
+
+
+def test_verification_catches_problems():
+    from pipeline.verify import verify_rename, verify_rekap
+    r = assemble(_pages(), None)
+    rows = export.rename_rows(r["records"], r["meta"], "CamScanner_28-09-26_21.33")
+    assert verify_rename(rows, r["records"], r["meta"], r["doc_types"]) == []
+    bad = dict(r["doc_types"]); bad[44] = "FAKTUR"
+    assert any("terbaca sebagai FAKTUR" in m for m in verify_rename(rows, r["records"], r["meta"], bad))
+    rk = export.rekap_rows(r["records"], r["meta"])
+    assert verify_rekap(r["records"], rk) == []
+    rk[0][5] = "MH1XXX"
+    assert any("NO RANGKA beda" in m for m in verify_rekap(r["records"], rk))

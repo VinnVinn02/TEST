@@ -8,6 +8,7 @@ from openpyxl.utils import get_column_letter
 
 from . import normalize as N
 from .assemble import COLUMNS
+from .verify import verify_all
 
 TEXT_COLS = {"NIK", "NO HP", "NO RANGKA", "NO MESIN"}
 
@@ -88,23 +89,32 @@ def rename_xlsx(rows):
     return _bytes(wb)
 
 
-def rekap_xlsx(records, meta):
-    wb = Workbook()
-    head = ["NO", "NOMOR FAKTUR", "NAMA PEMILIK", "ALAMAT", "TYPE", "NOMOR RANGKA", "NOMOR MESIN", "TAHUN",
-            "WARNA", "NO HP", "GMAIL"]
+REKAP_HEAD = ["NO", "NOMOR FAKTUR", "NAMA PEMILIK", "ALAMAT", "TYPE", "NOMOR RANGKA", "NOMOR MESIN", "TAHUN",
+              "WARNA", "NO HP", "GMAIL"]
+
+
+def rekap_rows(records, meta):
     rows = []
     for i, (r, m) in enumerate(zip(records, meta), 1):
         alamat = " - ".join(x for x in (r["ALAMAT 1"], r["ALAMAT 2"], "BATAM") if x)
         rows.append([i, r["NO. FAKTUR"], r["NAMA LENGKAP"], alamat, f"{r['MERK']} {r['TIPE']}".strip(),
                      r["NO RANGKA"], r["NO MESIN"], m["TAHUN"], r["WARNA"], r["NO HP"], r["EMAIL"]])
-    _sheet(wb, "REKAP DATA BERKAS", head, rows)
+    return rows
+
+
+def rekap_xlsx(records, meta):
+    wb = Workbook()
+    _sheet(wb, "REKAP DATA BERKAS", REKAP_HEAD, rekap_rows(records, meta))
     return _bytes(wb)
 
 
-def build_zip(records, warnings, general, meta, bast_no, pdf_stem, page_images: dict) -> bytes:
+def build_zip(records, warnings, general, meta, bast_no, pdf_stem, page_images: dict, doc_types=None):
+    """Return (zip_bytes, daftar_masalah_verifikasi)."""
     refresh_filenames(records)
     tag = bast_tag(bast_no)
     rows = rename_rows(records, meta, pdf_stem)
+    checks = verify_all(records, meta, rows, doc_types)
+    general = list(general) + [f"VERIFIKASI: {c}" for c in checks]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr(f"DATA_BERKAS_KENDARAAN_BAST_{tag}.xlsx", data_berkas(records, warnings, general))
@@ -113,7 +123,7 @@ def build_zip(records, warnings, general, meta, bast_no, pdf_stem, page_images: 
         for _, pg, _, new, _ in rows:
             if pg in page_images:
                 z.writestr(f"BERKAS_RENAME/{new}", page_images[pg])
-    return buf.getvalue()
+    return buf.getvalue(), checks
 
 
 def pages_zip(page_images: dict, pdf_stem: str) -> bytes:

@@ -167,7 +167,8 @@ def assemble(pages: list[dict], hp_lookup: dict | None = None):
         if j not in used:
             general.append(f"Baris BAST {b.get('no', j + 1)} ({N.up(b.get('nama'))}) tidak punya faktur di PDF")
     general.append("NO STCK tidak ada di dokumen sumber: diisi dari rentang nomor (sidebar) atau manual.")
-    return {"records": records, "warnings": warnings, "general": general, "meta": meta, "bast_no": bast_no}
+    return {"records": records, "warnings": warnings, "general": general, "meta": meta, "bast_no": bast_no,
+            "doc_types": {p["page"]: p.get("doc_type") for p in pages}}
 
 
 def _pick(pool, pred, fallback_page=None):
