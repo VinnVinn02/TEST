@@ -1,0 +1,6 @@
+anthropic>=0.40
+streamlit>=1.40
+pandas
+openpyxl
+pymupdf
+pytest
