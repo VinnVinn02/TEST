@@ -165,7 +165,7 @@ def assemble(pages: list[dict], hp_lookup: dict | None = None):
     for j, b in enumerate(bast_rows):
         if j not in used:
             general.append(f"Baris BAST {b.get('no', j + 1)} ({N.up(b.get('nama'))}) tidak punya faktur di PDF")
-    general.append("NO STCK tidak ada di dokumen sumber: isi manual.")
+    general.append("NO STCK tidak ada di dokumen sumber: diisi dari rentang nomor (sidebar) atau manual.")
     return {"records": records, "warnings": warnings, "general": general, "meta": meta, "bast_no": bast_no}
 
 

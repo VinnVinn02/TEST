@@ -7,6 +7,7 @@ from pipeline import export
 from pipeline.assemble import COLUMNS, assemble, load_hp_lookup
 from pipeline.extract import DEFAULT_MODEL, extract_all
 from pipeline.pdf import render_pages
+from pipeline.stck import fill_stck
 
 st.set_page_config(page_title="Ekstrak Berkas BAST", layout="wide")
 st.title("Ekstrak Berkas BAST → DATA BERKAS, RENAME, REKAP")
@@ -14,6 +15,8 @@ st.title("Ekstrak Berkas BAST → DATA BERKAS, RENAME, REKAP")
 with st.sidebar:
     api_key = st.text_input("Anthropic API key", type="password", value=os.environ.get("ANTHROPIC_API_KEY", ""))
     model = st.text_input("Model", DEFAULT_MODEL)
+    stck_range = st.text_input("Rentang NO STCK", "6790758 - 6790813",
+                               help="Diisi berurutan ke tiap konsumen. Kosongkan bila diisi manual.")
 
 pdf = st.file_uploader("PDF scan (BAST + faktur + sertifikat + KTP)", type="pdf")
 hp_xlsx = st.file_uploader("Excel NO HP & EMAIL", type="xlsx")
@@ -32,6 +35,9 @@ if res:
     st.subheader(f"BAST {res['bast_no'] or '?'} — {len(res['records'])} konsumen")
     for g in res["general"]:
         st.warning(g)
+    stck_msgs, _ = fill_stck(res["records"], stck_range)
+    for m in stck_msgs:
+        st.warning(m) if not m.startswith("INFO") else st.info(m)
     df = pd.DataFrame(res["records"], columns=COLUMNS)
     df["PERINGATAN"] = ["\n".join(w) for w in res["warnings"]]
     st.caption("Baris bertanda peringatan perlu dicek. Sel bisa diedit langsung sebelum diunduh.")

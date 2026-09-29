@@ -73,3 +73,13 @@ def test_bast_is_authoritative_for_name_and_faktur():
     p[1]["faktur"]["no_faktur"] = "FH/BB6/038647/Z"  # angka salah OCR
     rec = assemble(p, None)["records"][0]
     assert rec["NAMA LENGKAP"] == "ZULKIFLI" and rec["NO. FAKTUR"] == "FH/BB6/038641/Z"
+
+
+def test_stck_range():
+    from pipeline.stck import fill_stck
+    recs = [{"NO STCK": ""} for _ in range(20)]
+    msgs, nxt = fill_stck(recs, "6790758 - 6790813")
+    assert recs[0]["NO STCK"] == "6790758" and recs[19]["NO STCK"] == "6790777" and nxt == 6790778
+    assert any("6790778 - 6790813" in m for m in msgs)
+    msgs, _ = fill_stck([{"NO STCK": ""} for _ in range(60)], "6790758 - 6790813")
+    assert any("tidak terisi" in m for m in msgs)
