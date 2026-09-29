@@ -95,3 +95,13 @@ def test_order_follows_scan_pages():
     bast["bast_baris"].insert(0, {"no": "1", "no_faktur": "BB6 /000002/Z", "nama": "BUDI", "no_rangka": "JME999TK000002", "no_mesin": "JME1E 0000002"})
     r = assemble([f2, bast, f1], None)  # input acak, BAST menaruh BUDI lebih dulu
     assert [x["NAMA LENGKAP"] for x in r["records"]] == ["ZULKIFLI", "BUDI"]
+
+
+def test_renamer_tolerant_names():
+    from pipeline import renamer
+    m = [("CamScanner 28-09-26 21.33_4.jpg", "A_FAKTUR.jpg"), ("CamScanner 28-09-26 21.33_5.jpg", "A_SERTIFIKAT.jpg"),
+         ("CamScanner 28-09-26 21.33_44.jpg", "A_KTP.jpg")]
+    files = {"CamScanner_28-09-26_21.33_04.jpg": b"1", "CamScanner 28-09-26 21.33_5.JPG": b"2", "CamScanner 44.jpg": b"3"}
+    z, rep = renamer.rename_files(m, files)
+    assert sorted(zipfile.ZipFile(io.BytesIO(z)).namelist()) == ["A_FAKTUR.jpg", "A_KTP.jpg", "A_SERTIFIKAT.jpg"]
+    assert rep[-1].startswith("3 dari 3")
