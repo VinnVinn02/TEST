@@ -1,6 +1,9 @@
-anthropic>=0.40
 streamlit>=1.40
 pandas
 openpyxl
 pymupdf
+pillow
+numpy
+rapidocr-onnxruntime   # OCR offline (mesin 1)
+anthropic>=0.40        # OCR Claude (opsional, perlu API key)
 pytest
