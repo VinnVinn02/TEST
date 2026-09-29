@@ -68,6 +68,7 @@ def assemble(pages: list[dict], hp_lookup: dict | None = None):
     pages = sorted(pages, key=lambda p: p["page"])  # urutan data = urutan halaman scan
     by = lambda t: [p for p in pages if p.get("doc_type") == t]
     bast_no = next((p["bast_nomor"] for p in by("BAST") if p.get("bast_nomor")), "")
+    bast_tgl = N.tanggal(next((p["bast_tanggal"] for p in by("BAST") if p.get("bast_tanggal")), ""))
     bast_rows, seen = [], set()
     for p in by("BAST"):
         for r in p.get("bast_baris") or []:
@@ -75,7 +76,8 @@ def assemble(pages: list[dict], hp_lookup: dict | None = None):
             if k not in seen:
                 seen.add(k)
                 alt = {str(a.get("no")).strip(): a for a in p.get("_bast_alt") or []}
-                r["_ok"] = _bast_row_ok(r, alt, p.get("_witness", "")) if (alt or p.get("_witness")) else None
+                if "_ok" not in r:
+                    r["_ok"] = _bast_row_ok(r, alt, p.get("_witness", "")) if (alt or p.get("_witness")) else None
                 bast_rows.append(r)
     fakturs = by("FAKTUR")
     sertifs, ktps = list(by("SERTIFIKAT")), list(by("KTP"))
@@ -108,6 +110,9 @@ def assemble(pages: list[dict], hp_lookup: dict | None = None):
         nama_f = N.up(f.get("nama"))
         if b:
             nama = N.up(b.get("nama"))
+            cs = lambda x: N.re.sub(r"[^A-Z0-9]", "", x)
+            if nama_f and cs(nama) == cs(nama_f) and nama.count(" ") < nama_f.count(" "):
+                nama = nama_f  # huruf sama persis dengan BAST, hanya spasi yang hilang di OCR BAST
             if nama_f and nama != nama_f:
                 w.append(f"INFO: nama diperbaiki sesuai BAST ({nama_f} -> {nama})")
         else:
@@ -200,8 +205,8 @@ def assemble(pages: list[dict], hp_lookup: dict | None = None):
             "NO. SUT": ff("sut", sut), "NO. SRUT": ff("srut", srut),
             "ALAMAT 1": "OK" if ok and ff("alamat_baris1", a1) == "OK" else ("KOSONG" if not a1 else "CEK"),
             "ALAMAT 2": _worst(ff("kelurahan", a2), ff("kecamatan", a2)) if a2 else "KOSONG",
-            "NIK": "KOSONG" if not nik else ("OK" if len(nik) == 16 and ff("nik", nik) == "OK" and kn == nik and
-                                             kf.get("nik", "OK") == "OK" else "CEK"),
+            # dua dokumen berbeda (faktur & KTP) sama-sama menulis NIK yang sama = terkonfirmasi
+            "NIK": "KOSONG" if not nik else ("OK" if len(nik) == 16 and kn == nik else "CEK"),
             "PEKERJAAN": "KOSONG" if not pekerjaan else _st(kf.get("pekerjaan") if kf else (
                 "BEDA" if ktp and ktp.get("terbaca") == "KURANG_JELAS" else None)),
             "NO HP": "OK" if h else "KOSONG", "EMAIL": "OK" if e else "KOSONG",
@@ -232,7 +237,7 @@ def assemble(pages: list[dict], hp_lookup: dict | None = None):
             general.append(f"Baris BAST {b.get('no', j + 1)} ({N.up(b.get('nama'))}) tidak punya faktur di PDF")
     general.append("NO STCK tidak ada di dokumen sumber: diisi dari rentang nomor (sidebar) atau manual.")
     return {"records": records, "warnings": warnings, "general": general, "meta": meta, "bast_no": bast_no,
-            "doc_types": {p["page"]: p.get("doc_type") for p in pages}, "cells": cells}
+            "tanggal": bast_tgl or max((r["TANGGAL FAKTUR"] for r in records), default=""), "doc_types": {p["page"]: p.get("doc_type") for p in pages}, "cells": cells}
 
 
 def _pick(pool, pred, fallback_page=None):

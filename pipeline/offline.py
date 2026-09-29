@@ -105,19 +105,39 @@ def _c(s: str) -> str:
 
 
 def classify(lines) -> str:
-    t = "".join(_c(l["t"]) for l in lines)
+    t = "".join(_c(l["t"]) for l in lines).replace(".", "")
     if "FAKTURKENDARAANBERMOTOR" in t or ("TAHUNPEMBUATAN" in t and "NOMORMESIN" in t):
         return "FAKTUR"
     if "SERTIFIKAT" in t and ("IDENTIFIKASI" in t or "NIK" in t):
         return "SERTIFIKAT"
-    if "SERAHTERIMA" in t or ("NORANGKA" in t and "NOMESIN" in t and "DESKRIPSI" in t):
+    if "SERAHTERIMA" in t or ("NORANGKA" in t and "NOMESIN" in t) or ("NOFAKTUR" in t and "DESKRIPSI" in t):
         return "BAST"
-    if "PROVINSI" in t or "KEWARGANEGARAAN" in t or "BERLAKUHINGGA" in t or "AGAMA" in t:
+    hits = sum(k in t for k in ("PROVINSI", "KEWARGANEGARAAN", "BERLAKUHINGGA", "AGAMA", "KELAMIN", "PERKAWINAN",
+                                "GOLDARAH", "KECAMATAN", "KELDESA", "SEUMURHIDUP", "TGLLAHIR", "TEMPAT"))
+    if hits >= 2 or "PROVINSI" in t or (hits >= 1 and re.search(r"(?<!\d)\d{15,16}(?!\d)", t)):
         return "KTP"
     return "LAINNYA"
 
 
 # ---------------------------------------------------------------- parser bidang
+def clean_val(v: str) -> str:
+    """Buang sisa pemisah ':' '>' '|' dan digit nomor urut tunggal di depan nilai ('1 BIRU-HITAM')."""
+    v = re.sub(r"^[\s:;>*'`|.,\-=\[\]()：]+", "", str(v or ""))
+    v = re.sub(r"^\d\s+(?=[A-Za-z])", "", v)
+    return re.sub(r"[\s|:]+$", "", v).strip()
+
+
+def _right_of(lines, label, maxdy=18):
+    """Nilai di sebelah kanan label pada baris yang sama (lebih andal daripada urutan baca)."""
+    for l in lines:
+        if label in _c(l["t"]).replace(".", "") and len(_c(l["t"])) <= len(label) + 6:
+            c = [m for m in lines if m is not l and m["x"] > l["x"] + 20 and abs(m["y"] - l["y"]) <= maxdy
+                 and _c(m["t"]) not in ("", ":")]
+            if c:
+                return clean_val(" ".join(m["t"] for m in sorted(c, key=lambda m: m["x"])))
+    return ""
+
+
 def _after(texts, label, skip=()):
     """Teks pertama setelah baris yang mengandung label (dibandingkan tanpa spasi)."""
     for i, t in enumerate(texts):
@@ -125,7 +145,7 @@ def _after(texts, label, skip=()):
             for u in texts[i + 1:i + 4]:
                 cu = _c(u)
                 if cu and cu not in skip and not re.fullmatch(r"\d{1,2}\.?", cu) and cu != ":":
-                    return u.strip(" :")
+                    return clean_val(u)
             return ""
     return ""
 
@@ -146,29 +166,30 @@ def parse_faktur(lines) -> dict:
     f["no_faktur"] = f"FH/BB6/{m[1]}/Z" if m else ""
     m = re.search(r"(\d{1,2})(JAN|FEB|MAR|APR|MEI|JUN|JUL|AGU|AUG|SEP|OKT|OCT|NOV|DES|DEC)[A-Z]*(\d{4})", comp)
     f["tanggal"] = f"{m[1]} {m[2]} {m[3]}" if m else ""
-    f["nama"] = _after(texts, "ATASNAMA", skip=("ALAMAT",))
+    f["nama"] = _right_of(lines, "ATASNAMA") or _after(texts, "ATASNAMA", skip=("ALAMAT",))
     # alamat: semua baris di antara ALAMAT dan baris KEC.
     idx_al = next((i for i, t in enumerate(texts) if _c(t).startswith("ALAMAT") and len(_c(t)) <= 8), None)
     idx_kec = next((i for i, t in enumerate(texts) if re.match(r"KEC", _c(t))), None)
     alamat_lines = []
     if idx_al is not None and idx_kec is not None and idx_kec > idx_al:
-        alamat_lines = [t for t in texts[idx_al + 1:idx_kec] if not re.fullmatch(r"\d{1,2}\.?|:", _c(t))]
+        alamat_lines = [clean_val(t) for t in texts[idx_al + 1:idx_kec]
+                        if len(re.sub(r"[^A-Za-z0-9]", "", t)) >= 3 and not re.fullmatch(r"\d{1,2}\.?", _c(t))]
     kel = alamat_lines[-1] if len(alamat_lines) >= 2 else ""
     a1 = " ".join(alamat_lines[:-1]) if kel else " ".join(alamat_lines)
     a1 = re.sub(r"(RW\s*\d+)\s+(\d)$", r"\1\2", a1)  # RW terpotong baris: "RW 01" + "1"
     a1 = fix_rt_rw(a1)
     f["alamat_baris1"], f["kelurahan"] = a1.strip(), kel.strip()
-    f["kecamatan"] = texts[idx_kec].strip() if idx_kec is not None else ""
+    f["kecamatan"] = clean_val(texts[idx_kec]) if idx_kec is not None else ""
     f["kota"] = "KOTA BATAM" if "KOTABATAM" in comp else ""
     m = re.search(r"(?<!\d)(\d{16})(?!\d)", comp)
     f["nik"] = m[1] if m else ""
-    f["merk"] = _after(texts, "MERK")
-    f["tipe"] = _after(texts, "TYPE")
+    f["merk"] = _right_of(lines, "MERK") or _after(texts, "MERK")
+    f["tipe"] = _right_of(lines, "TYPE") or _after(texts, "TYPE")
     m = re.search(r"TAHUNPEMBUATAN\D*?(20\d\d)", comp)
     f["tahun"] = m[1] if m else ""
     m = re.search(r"LISTRIK\D*?(\d{2,4}[.,]\d{1,2})", comp)
     f["cc"] = m[1] if m else ""
-    f["warna"] = _after(texts, "WARNA")
+    f["warna"] = _right_of(lines, "WARNA") or _after(texts, "WARNA")
     m = re.search(r"MH1[A-Z0-9]{14}", comp)
     f["no_rangka"] = m[0] if m else ""
     m = re.search(r"NOMORMESIN\D{0,3}([A-Z0-9]{3}[1I]E)[\-|]?(\d{6,7})", comp)
@@ -223,6 +244,8 @@ def parse_bast(lines) -> dict:
     comp = "".join(_c(l["t"]) for l in lines)
     m = re.search(r"(\d{3})-?FDB-?(\d{4})-?(\d{1,2})-?(\d{5})", comp)
     nomor = f"{m[1]}-FDB-{m[2]}-{m[3]}-{m[4]}" if m else ""
+    mt = re.search(r"TANGGAL(\d{1,2})-?([A-Z]{3,9})-?(\d{4})", comp)
+    tgl = f"{mt[1]}-{mt[2]}-{mt[3]}" if mt else ""
     heads = {}
     for l in lines:
         c = _c(l["t"])
@@ -231,7 +254,7 @@ def parse_bast(lines) -> dict:
             if c.startswith(lab) and key not in heads:
                 heads[key] = l
     if len(heads) < 5:
-        return {"bast_nomor": nomor, "bast_baris": []}
+        return {"bast_nomor": nomor, "bast_tanggal": tgl, "bast_baris": []}
     hy = max(h["y"] for h in heads.values())
     no_x = min(l["x"] for l in lines if _c(l["t"]) == "NO" and abs(l["y"] - hy) < 15) if any(
         _c(l["t"]) == "NO" and abs(l["y"] - hy) < 15 for l in lines) else 40
@@ -303,6 +326,58 @@ def merge_fields(a: dict, b: dict):
     return out, flags
 
 
+def respace(target: str, tess_texts, cutoff: float = 0.85):
+    """Cari di teks Tesseract rangkaian kata yang ejaannya (tanpa spasi) paling mirip 'target'.
+    Return (teks_berspasi, sama_persis)."""
+    tk = re.sub(r"[^A-Z0-9]", "", N.up(target))
+    if not tk:
+        return "", False
+    best, best_r = "", 0.0
+    for t in tess_texts:
+        words = [w for w in re.split(r"[\s|]+", N.up(t)) if w]
+        for i in range(len(words)):
+            for j in range(i + 1, min(i + 8, len(words)) + 1):
+                cand = " ".join(words[i:j])
+                r = N.ratio(re.sub(r"[^A-Z0-9]", "", cand), tk)
+                if r > best_r:
+                    best, best_r = cand, r
+    return (best, best_r == 1.0) if best_r >= cutoff else ("", False)
+
+
+def merge_bast(pa, pc, pt, witness, tess_texts=()):
+    """Tabel BAST dari 3 pembacaan (RapidOCR, RapidOCR pra-proses, Tesseract). Sel ID: suara terbanyak;
+    sel teks (nama/alamat/tipe): ambil Tesseract (spasi benar) bila cocok dengan salah satu RapidOCR."""
+    by = lambda p: {str(r.get("no")).strip(): r for r in p["bast_baris"]}
+    A, C, T = by(pa), by(pc), by(pt)
+    nomor = pa["bast_nomor"] or pc["bast_nomor"] or pt["bast_nomor"]
+    tanggal = pa.get("bast_tanggal") or pc.get("bast_tanggal") or pt.get("bast_tanggal") or ""
+    rows = []
+    for no in sorted(set(A) | set(C) | set(T), key=lambda x: int(x) if x.isdigit() else 999):
+        ra, rc, rt = A.get(no, {}), C.get(no, {}), T.get(no, {})
+        row, ok = {"no": no}, {}
+        fn = {"no_faktur": N.faktur_digits, "no_rangka": N.rangka_key, "no_mesin": N.mesin,
+              "nama": lambda v: re.sub(r"[^A-Z0-9]", "", N.up(v)), "alamat": lambda v: re.sub(r"[^A-Z0-9]", "", N.up(v)),
+              "tipe": lambda v: re.sub(r"[^A-Z0-9]", "", N.up(v))}
+        for k, g in fn.items():
+            va, vc, vt = ra.get(k, ""), rc.get(k, ""), rt.get(k, "")
+            ka, kc, kt = g(va), g(vc), g(vt)
+            votes = [x for x in (ka, kc, kt) if x]
+            best = max(set(votes), key=votes.count) if votes else ""
+            n = votes.count(best) if best else 0
+            if k in ("nama", "alamat", "tipe"):
+                base = va or vc or vt
+                spaced, exact = respace(base, tess_texts)  # spasi dari Tesseract
+                row[k] = spaced if spaced and (k != "alamat" or exact) else base
+                ok[k] = exact or (ka == kc and bool(ka))
+                continue
+            else:
+                row[k] = next((v for v, kk in ((va, ka), (vc, kc), (vt, kt)) if kk == best and v), "")
+            ok[k] = n >= 2 or (best != "" and best in witness.replace(".", ""))
+        row["_ok"] = ok
+        rows.append(row)
+    return {"bast_nomor": nomor, "bast_tanggal": tanggal, "bast_baris": rows}
+
+
 def _compact(lines) -> str:
     return "".join(_c(l["t"]) for l in lines)
 
@@ -332,13 +407,7 @@ def extract_all(pages, progress=None):
             d[dt.lower()], d["_flags"] = merged, flags
         elif dt == "BAST":
             lc = ocr_lines(jpeg, "C")
-            pa, pc = parse_bast(la), parse_bast(lc)
-            best, alt = (pa, pc) if len(pa["bast_baris"]) >= len(pc["bast_baris"]) else (pc, pa)
-            d.update(best)
-            d["_bast_alt"] = alt["bast_baris"]
-            d["_witness"] = _compact(lt)  # teks Tesseract untuk konfirmasi sel BAST
-        if any(v != "OK" for v in d.get("_flags", {}).values()):
-            d["terbaca"] = "KURANG_JELAS"
+            d.update(merge_bast(parse_bast(la), parse_bast(lc), parse_bast(lt), _compact(lt), [l["t"] for l in lt]))
         results.append(d)
         if progress:
             progress(n, len(pages))

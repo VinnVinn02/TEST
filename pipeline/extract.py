@@ -16,6 +16,7 @@ SCHEMA = {
         "terbaca": {"type": "string", "enum": ["JELAS", "KURANG_JELAS"]},
         "catatan": _S,
         "bast_nomor": _S,
+        "bast_tanggal": _S,
         "bast_baris": {"type": "array", "items": _row},
         "faktur": {"type": "object", "properties": {k: _S for k in (
             "no_faktur", "tanggal", "nama", "alamat_baris1", "kelurahan", "kecamatan", "kota",
@@ -28,7 +29,7 @@ SCHEMA = {
 
 PROMPT = """Kamu adalah OCR untuk berkas biro jasa kendaraan (Honda/AHM). Baca halaman scan ini, tentukan jenisnya, \
 lalu isi HANYA bagian yang sesuai:
-- BAST: judul "BERITA ACARA SERAH TERIMA FAKTUR". Isi bast_nomor (mis. 047-FDB-2026-9-00024) dan bast_baris \
+- BAST: judul "BERITA ACARA SERAH TERIMA FAKTUR". Isi bast_nomor (mis. 047-FDB-2026-9-00024), bast_tanggal (mis. 26-September-2026) dan bast_baris \
 (semua baris tabel: no, no_faktur persis seperti tercetak, nama, alamat, no_rangka, no_mesin, tipe).
 - FAKTUR: "FAKTUR KENDARAAN BERMOTOR". Salin persis: no_faktur, tanggal, nama (ATAS NAMA), alamat_baris1 \
 (baris alamat yang memuat RT/RW), kelurahan, kecamatan, kota (baris-baris di bawah alamat), nik (NO KTP/TDP, 16 digit), \

@@ -117,7 +117,13 @@ def rekap_xlsx(records, meta):
     return _bytes(wb)
 
 
-def build_zip(records, warnings, general, meta, bast_no, pdf_stem, page_images: dict, doc_types=None, cells=None):
+def file_stem(kind: str, n: int, tanggal: str) -> str:
+    """DATA_BERKAS_<jumlah>_<DDMMYYYY> (tanggal ISO YYYY-MM-DD masuk)."""
+    y, m, d = (tanggal.split("-") + ["", "", ""])[:3] if tanggal else ("", "", "")
+    return f"{kind}_{n}" + (f"_{d}{m}{y}" if y else "")
+
+
+def build_zip(records, warnings, general, meta, bast_no, pdf_stem, page_images: dict, doc_types=None, cells=None, tanggal=""):
     """Return (zip_bytes, daftar_masalah_verifikasi)."""
     refresh_filenames(records)
     tag = bast_tag(bast_no)
@@ -126,9 +132,9 @@ def build_zip(records, warnings, general, meta, bast_no, pdf_stem, page_images: 
     general = list(general) + [f"VERIFIKASI: {c}" for c in checks]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr(f"DATA_BERKAS_KENDARAAN_BAST_{tag}.xlsx", data_berkas(records, warnings, general, cells))
-        z.writestr(f"DATA_RENAME_BAST_{tag}.xlsx", rename_xlsx(rows))
-        z.writestr(f"REKAP_DATA_BERKAS_{len(records)}.xlsx", rekap_xlsx(records, meta))
+        z.writestr(f"{file_stem('DATA_BERKAS', len(records), tanggal)}.xlsx", data_berkas(records, warnings, general, cells))
+        z.writestr(f"{file_stem('DATA_RENAME', len(records), tanggal)}.xlsx", rename_xlsx(rows))
+        z.writestr(f"{file_stem('REKAP_DATA', len(records), tanggal)}.xlsx", rekap_xlsx(records, meta))
         for _, pg, _, new, _ in rows:
             if pg in page_images:
                 z.writestr(f"BERKAS_RENAME/{new}", page_images[pg])

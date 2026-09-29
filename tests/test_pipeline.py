@@ -44,11 +44,11 @@ def test_assemble_and_export():
     assert rec["NO. SRUT"].startswith("SRUT/") and rec["ALASAN BELI"] == "UNTUK KERJA" and rec["NO HP"] == "081371604033"
     assert any("diperbaiki sesuai BAST" in w for w in r["warnings"][0])
     data, checks = export.build_zip(r["records"], r["warnings"], r["general"], r["meta"], r["bast_no"],
-                                    "CamScanner_28-09-26_21.33", {4: b"a", 5: b"b", 44: b"c"}, r["doc_types"])
+                                    "CamScanner_28-09-26_21.33", {4: b"a", 5: b"b", 44: b"c"}, r["doc_types"], r["cells"], r["tanggal"])
     assert checks == []
     z = zipfile.ZipFile(io.BytesIO(data))
     names = z.namelist()
-    assert "DATA_BERKAS_KENDARAAN_BAST_047-00024.xlsx" in names and "BERKAS_RENAME/ZULKIFLI_KTP.jpg" in names
+    assert "DATA_BERKAS_1_24092026.xlsx" in names and "DATA_RENAME_1_24092026.xlsx" in names and "REKAP_DATA_1_24092026.xlsx" in names and "BERKAS_RENAME/ZULKIFLI_KTP.jpg" in names
 
 
 def test_missing_ktp_warns():
@@ -125,3 +125,19 @@ def test_verification_catches_problems():
     assert verify_rekap(r["records"], rk) == []
     rk[0][5] = "MH1XXX"
     assert any("NO RANGKA beda" in m for m in verify_rekap(r["records"], rk))
+
+
+def test_bast_date_is_used_for_filenames():
+    p = _pages()
+    p[0]["bast_tanggal"] = "26-September-2026"
+    r = assemble(p, None)
+    assert r["tanggal"] == "2026-09-26" and export.file_stem("DATA_BERKAS", 20, r["tanggal"]) == "DATA_BERKAS_20_26092026"
+
+
+def test_bast_name_spacing_restored_from_faktur():
+    p = _pages()
+    p[0]["bast_baris"][0]["nama"] = "ZULKIFLI"          # BAST: tanpa spasi (hilang di OCR)
+    p[1]["faktur"]["nama"] = "ZUL KIFLI"                # faktur: huruf sama, spasi lebih banyak
+    assert assemble(p, None)["records"][0]["NAMA LENGKAP"] == "ZUL KIFLI"
+    p[1]["faktur"]["nama"] = "BUDI"                     # huruf beda -> BAST tetap patokan
+    assert assemble(p, None)["records"][0]["NAMA LENGKAP"] == "ZULKIFLI"

@@ -54,14 +54,14 @@ if res:
         st.json(edited[COLUMNS].to_dict("records"))
     records = edited[COLUMNS].fillna("").astype(str).to_dict("records")
     data, checks = export.build_zip(records, res["warnings"], res["general"], res["meta"], res["bast_no"],
-                                    st.session_state.stem, st.session_state.images, res["doc_types"], res["cells"])
+                                    st.session_state.stem, st.session_state.images, res["doc_types"], res["cells"], res["tanggal"])
     if checks:
         for c in checks:
             st.error(c)
     else:
         st.success("Verifikasi lolos: DATA RENAME sesuai jenis halaman, dan DATA KENDARAAN = REKAP.")
     st.download_button("Unduh ZIP (3 Excel + gambar ter-rename)", data,
-                       f"BAST_{export.bast_tag(res['bast_no'])}.zip", "application/zip")
+                       f"{export.file_stem('BERKAS', len(records), res['tanggal'])}.zip", "application/zip")
     st.download_button("Unduh halaman PDF sebagai gambar (nama CamScanner_N)",
                        export.pages_zip(st.session_state.images, st.session_state.stem),
                        "halaman_pdf.zip", "application/zip")
