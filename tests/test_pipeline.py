@@ -83,3 +83,15 @@ def test_stck_range():
     assert any("6790778 - 6790813" in m for m in msgs)
     msgs, _ = fill_stck([{"NO STCK": ""} for _ in range(60)], "6790758 - 6790813")
     assert any("tidak terisi" in m for m in msgs)
+
+
+def test_order_follows_scan_pages():
+    import copy
+    f1 = _pages()[1]
+    f2 = copy.deepcopy(f1)
+    f2["page"] = 6
+    f2["faktur"].update(nama="BUDI", no_faktur="FH/BB6/000002/Z", no_rangka="MH1JME999TK000002", no_mesin="JME1E0000002", nik="1403070606696135")
+    bast = _pages()[0]
+    bast["bast_baris"].insert(0, {"no": "1", "no_faktur": "BB6 /000002/Z", "nama": "BUDI", "no_rangka": "JME999TK000002", "no_mesin": "JME1E 0000002"})
+    r = assemble([f2, bast, f1], None)  # input acak, BAST menaruh BUDI lebih dulu
+    assert [x["NAMA LENGKAP"] for x in r["records"]] == ["ZULKIFLI", "BUDI"]

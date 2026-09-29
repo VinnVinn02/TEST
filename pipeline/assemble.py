@@ -37,6 +37,7 @@ def _score(f: dict, b: dict) -> float:
 
 def assemble(pages: list[dict], hp_lookup: dict | None = None):
     """pages: hasil extract_all. Return dict(records, warnings, meta, bast_no)."""
+    pages = sorted(pages, key=lambda p: p["page"])  # urutan data = urutan halaman scan
     by = lambda t: [p for p in pages if p.get("doc_type") == t]
     bast_no = next((p["bast_nomor"] for p in by("BAST") if p.get("bast_nomor")), "")
     bast_rows, seen = [], set()
