@@ -26,6 +26,34 @@ def load_hp_lookup(path_or_file) -> dict:
     return {"rangka": by_r, "mesin": by_m}
 
 
+def _st(flag, value=True):
+    """Status sel: OK / CEK / KOSONG dari bendera OCR ('OK','BEDA','TIDAK_VALID','KOSONG')."""
+    if not value or flag == "KOSONG":
+        return "KOSONG"
+    return "OK" if flag in (None, "OK") else "CEK"
+
+
+def _worst(*st):
+    for x in ("KOSONG", "CEK"):
+        if x in st:
+            return x
+    return "OK"
+
+
+def _bast_row_ok(row: dict, alt_by_no: dict, witness: str) -> dict:
+    """Suara 2 dari 3 (RapidOCR utama, RapidOCR pra-proses, Tesseract) untuk sel BAST yang jadi patokan."""
+    alt = alt_by_no.get(str(row.get("no")).strip(), {})
+    same = lambda k, fn: bool(alt) and fn(row.get(k)) == fn(alt.get(k))
+    w = lambda x: bool(x) and x in witness
+    d = N.faktur_digits(row.get("no_faktur"))
+    return {
+        "nama": same("nama", N.up) or w(N.re.sub(r"[^A-Z0-9]", "", N.up(row.get("nama")))),
+        "no_faktur": same("no_faktur", N.faktur_digits) or w(f"/{d}/"),
+        "no_rangka": same("no_rangka", N.rangka_key) or w(N.rangka_key(row.get("no_rangka"))),
+        "no_mesin": same("no_mesin", N.mesin) or w(N.mesin(row.get("no_mesin"))),
+    }
+
+
 def _score(f: dict, b: dict) -> float:
     dig = 1.0 if N.faktur_digits(f.get("no_faktur")) and \
         N.faktur_digits(f.get("no_faktur")) == N.faktur_digits(b.get("no_faktur")) else \
@@ -46,6 +74,8 @@ def assemble(pages: list[dict], hp_lookup: dict | None = None):
             k = (N.faktur_digits(r.get("no_faktur")), N.rangka_key(r.get("no_rangka")))
             if k not in seen:
                 seen.add(k)
+                alt = {str(a.get("no")).strip(): a for a in p.get("_bast_alt") or []}
+                r["_ok"] = _bast_row_ok(r, alt, p.get("_witness", "")) if (alt or p.get("_witness")) else None
                 bast_rows.append(r)
     fakturs = by("FAKTUR")
     sertifs, ktps = list(by("SERTIFIKAT")), list(by("KTP"))
@@ -67,7 +97,7 @@ def assemble(pages: list[dict], hp_lookup: dict | None = None):
             match[i] = j
             used.add(j)
 
-    records, warnings, meta = [], [], []
+    records, warnings, meta, cells = [], [], [], []
     for i, p in enumerate(fakturs):
         f = p.get("faktur") or {}
         w = []
@@ -148,6 +178,40 @@ def assemble(pages: list[dict], hp_lookup: dict | None = None):
         if not e:
             w.append("Email tidak ditemukan di Excel HP/EMAIL")
 
+        # ---- status sel: OK / CEK / KOSONG
+        pf = p.get("_flags")
+        ff = lambda key, val: _st((pf or {}).get(key) if pf is not None else (
+            "BEDA" if p.get("terbaca") == "KURANG_JELAS" else None), val)
+        bok = (b or {}).get("_ok") or {}
+        bconf = lambda key: bok.get(key, True) if b else False    # BAST sendiri terkonfirmasi?
+        kf = (ktp or {}).get("_flags") or {}
+        sfak = N.faktur_digits((sert or {}).get("sertifikat", {}).get("no_faktur")) if sert else ""
+        kn = N.nik((ktp or {}).get("ktp", {}).get("nik")) if ktp else ""
+        cf = {
+            "NAMA LENGKAP": "KOSONG" if not nama else ("OK" if b and bconf("nama") and (
+                N.ratio(nama, nama_f) >= 0.85 or (ktp and N.ratio(nama, (ktp.get("ktp") or {}).get("nama")) >= 0.85)) else "CEK"),
+            "NO. FAKTUR": "KOSONG" if not nf else ("OK" if b and bconf("no_faktur") and (
+                N.faktur_digits(f.get("no_faktur")) == N.faktur_digits(nf) or sfak == N.faktur_digits(nf)) else "CEK"),
+            "NO RANGKA": "KOSONG" if not rk else ("OK" if len(rk) == 17 and b and bconf("no_rangka") and
+                                                 N.rangka(f.get("no_rangka")) == rk else "CEK"),
+            "NO MESIN": "KOSONG" if not ms else ("OK" if b and bconf("no_mesin") and N.mesin(f.get("no_mesin")) == ms else "CEK"),
+            "WARNA": ff("warna", f.get("warna")), "CC": ff("cc", cc), "MERK": ff("merk", f.get("merk")),
+            "TIPE": ff("tipe", f.get("tipe")), "TANGGAL FAKTUR": ff("tanggal", tgl),
+            "NO. SUT": ff("sut", sut), "NO. SRUT": ff("srut", srut),
+            "ALAMAT 1": "OK" if ok and ff("alamat_baris1", a1) == "OK" else ("KOSONG" if not a1 else "CEK"),
+            "ALAMAT 2": _worst(ff("kelurahan", a2), ff("kecamatan", a2)) if a2 else "KOSONG",
+            "NIK": "KOSONG" if not nik else ("OK" if len(nik) == 16 and ff("nik", nik) == "OK" and kn == nik and
+                                             kf.get("nik", "OK") == "OK" else "CEK"),
+            "PEKERJAAN": "KOSONG" if not pekerjaan else _st(kf.get("pekerjaan") if kf else (
+                "BEDA" if ktp and ktp.get("terbaca") == "KURANG_JELAS" else None)),
+            "NO HP": "OK" if h else "KOSONG", "EMAIL": "OK" if e else "KOSONG",
+        }
+        cf["ALASAN BELI"] = cf["PEKERJAAN"]
+        cf["NO STCK"] = "KOSONG"
+        cek = [c for c in COLUMNS if cf.get(c) == "CEK"]
+        if cek:
+            w.append("PERLU CEK (dua OCR beda / tak terkonfirmasi): " + ", ".join(cek))
+        cells.append(cf)
         fn = N.file_names(nama)
         records.append({
             "NAMA LENGKAP": nama, "NAMA FILE": "\n".join([fn["FAKTUR"], fn["KTP"], fn["SERTIFIKAT"]]),
@@ -168,7 +232,7 @@ def assemble(pages: list[dict], hp_lookup: dict | None = None):
             general.append(f"Baris BAST {b.get('no', j + 1)} ({N.up(b.get('nama'))}) tidak punya faktur di PDF")
     general.append("NO STCK tidak ada di dokumen sumber: diisi dari rentang nomor (sidebar) atau manual.")
     return {"records": records, "warnings": warnings, "general": general, "meta": meta, "bast_no": bast_no,
-            "doc_types": {p["page"]: p.get("doc_type") for p in pages}}
+            "doc_types": {p["page"]: p.get("doc_type") for p in pages}, "cells": cells}
 
 
 def _pick(pool, pred, fallback_page=None):

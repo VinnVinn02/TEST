@@ -54,13 +54,22 @@ def refresh_filenames(records):
     return records
 
 
-def data_berkas(records, warnings=(), general=()):
+FILL = {"CEK": PatternFill("solid", fgColor="FFEB9C"), "KOSONG": PatternFill("solid", fgColor="F4B6B6")}
+
+
+def data_berkas(records, warnings=(), general=(), cells=None):
     wb = Workbook()
-    _sheet(wb, "DATA KENDARAAN", COLUMNS, [[r[c] for c in COLUMNS] for r in records], wrap=("NAMA FILE",))
+    ws0 = _sheet(wb, "DATA KENDARAAN", COLUMNS, [[r[c] for c in COLUMNS] for r in records], wrap=("NAMA FILE",))
+    for i, cf in enumerate(cells or [], 2):  # kuning = perlu dicek, merah = kosong
+        for j, col in enumerate(COLUMNS, 1):
+            if cf.get(col) in FILL:
+                ws0.cell(i, j).fill = FILL[cf[col]]
     ws = wb.create_sheet("PERINGATAN")
     ws.append(["NAMA LENGKAP", "PERINGATAN"])
     for c in ws[1]:
         c.font = Font(bold=True)
+    ws.append(["(LEGENDA)", "Sel KUNING di DATA KENDARAAN = dua OCR berbeda / tidak terkonfirmasi, WAJIB dicek dari gambar. "
+                            "Sel MERAH = kosong / tidak ditemukan."])
     for g in general:
         ws.append(["(UMUM)", g])
     for r, ws_ in zip(records, warnings):
@@ -108,7 +117,7 @@ def rekap_xlsx(records, meta):
     return _bytes(wb)
 
 
-def build_zip(records, warnings, general, meta, bast_no, pdf_stem, page_images: dict, doc_types=None):
+def build_zip(records, warnings, general, meta, bast_no, pdf_stem, page_images: dict, doc_types=None, cells=None):
     """Return (zip_bytes, daftar_masalah_verifikasi)."""
     refresh_filenames(records)
     tag = bast_tag(bast_no)
@@ -117,7 +126,7 @@ def build_zip(records, warnings, general, meta, bast_no, pdf_stem, page_images: 
     general = list(general) + [f"VERIFIKASI: {c}" for c in checks]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr(f"DATA_BERKAS_KENDARAAN_BAST_{tag}.xlsx", data_berkas(records, warnings, general))
+        z.writestr(f"DATA_BERKAS_KENDARAAN_BAST_{tag}.xlsx", data_berkas(records, warnings, general, cells))
         z.writestr(f"DATA_RENAME_BAST_{tag}.xlsx", rename_xlsx(rows))
         z.writestr(f"REKAP_DATA_BERKAS_{len(records)}.xlsx", rekap_xlsx(records, meta))
         for _, pg, _, new, _ in rows:

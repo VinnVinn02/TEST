@@ -5,7 +5,8 @@ import streamlit as st
 
 from pipeline import export
 from pipeline.assemble import COLUMNS, assemble, load_hp_lookup
-from pipeline.extract import DEFAULT_MODEL, extract_all
+from pipeline.extract import DEFAULT_MODEL, extract_all as extract_claude
+from pipeline import offline
 from pipeline.pdf import render_pages
 from pipeline.stck import fill_stck
 
@@ -13,6 +14,8 @@ st.set_page_config(page_title="Ekstrak Berkas BAST", layout="wide")
 st.title("Ekstrak Berkas BAST → DATA BERKAS, RENAME, REKAP")
 
 with st.sidebar:
+    engine = st.radio("Mesin OCR", ["Offline (RapidOCR + Tesseract, dibandingkan)", "Claude API"],
+                      help="Offline: gratis, tanpa internet; dua mesin dibandingkan dan sel yang berbeda ditandai kuning.")
     api_key = st.text_input("Anthropic API key", type="password", value=os.environ.get("ANTHROPIC_API_KEY", ""))
     model = st.text_input("Model", DEFAULT_MODEL)
     stck_range = st.text_input("Rentang NO STCK", "6790758 - 6790813",
@@ -24,7 +27,9 @@ hp_xlsx = st.file_uploader("Excel NO HP & EMAIL", type="xlsx")
 if pdf and st.button("Proses", type="primary"):
     pages = render_pages(pdf.getvalue())
     bar = st.progress(0.0, "OCR halaman...")
-    ocr = extract_all(pages, api_key or None, model, progress=lambda d, t: bar.progress(d / t, f"OCR {d}/{t}"))
+    prog = lambda d, t: bar.progress(d / t, f"OCR {d}/{t}")
+    ocr = (offline.extract_all(pages, progress=prog) if engine.startswith("Offline")
+           else extract_claude(pages, api_key or None, model, progress=prog))
     st.session_state.result = assemble(ocr, load_hp_lookup(hp_xlsx) if hp_xlsx else None)
     st.session_state.images = dict(pages)
     st.session_state.stem = os.path.splitext(pdf.name)[0]
@@ -40,13 +45,16 @@ if res:
         st.warning(m) if not m.startswith("INFO") else st.info(m)
     df = pd.DataFrame(res["records"], columns=COLUMNS)
     df["PERINGATAN"] = ["\n".join(w) for w in res["warnings"]]
+    df.insert(1, "STATUS", ["OK" if all(v == "OK" for k, v in c.items() if k != "NO STCK") else
+                            ("CEK: " + ", ".join(k for k, v in c.items() if v == "CEK")
+                             if any(v == "CEK" for v in c.values()) else "ADA KOSONG") for c in res["cells"]])
     st.caption("Baris bertanda peringatan perlu dicek. Sel bisa diedit langsung sebelum diunduh.")
-    edited = st.data_editor(df, use_container_width=True, num_rows="fixed", disabled=["PERINGATAN"])
+    edited = st.data_editor(df, use_container_width=True, num_rows="fixed", disabled=["STATUS", "PERINGATAN"])
     with st.expander("Output JSON (array of objects)"):
         st.json(edited[COLUMNS].to_dict("records"))
     records = edited[COLUMNS].fillna("").astype(str).to_dict("records")
     data, checks = export.build_zip(records, res["warnings"], res["general"], res["meta"], res["bast_no"],
-                                    st.session_state.stem, st.session_state.images, res["doc_types"])
+                                    st.session_state.stem, st.session_state.images, res["doc_types"], res["cells"])
     if checks:
         for c in checks:
             st.error(c)
